@@ -1,0 +1,1302 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover" />
+<title>Portal Escolar · Colégio Trilhas</title>
+<meta name="description" content="Portal Escolar - acompanhamento de alunos para pais, professores e coordenação." />
+
+<link rel="manifest" href="manifest.json" />
+<link rel="icon" href="icon-192.png" />
+<link rel="apple-touch-icon" href="icon-192.png" />
+<meta name="theme-color" content="#1f3d2e" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="apple-mobile-web-app-title" content="Portal Escolar" />
+
+<style>
+  html, body { margin: 0; padding: 0; min-height: 100%; background: #faf9f4; }
+  #root { min-height: 100vh; }
+  #esc-loading {
+    min-height: 100vh; display: flex; align-items: center; justify-content: center;
+    font-family: system-ui, sans-serif; color: #1f3d2e; font-size: 15px;
+  }
+</style>
+
+<script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+</head>
+<body>
+<div id="root"><div id="esc-loading">Carregando Portal Escolar…</div></div>
+
+<script>
+  // Kill-switch: remove qualquer service worker/cache antigo que possa
+  // estar travando o app numa versão quebrada anterior.
+  if ("serviceWorker" in navigator) {
+    navigator.serviceWorker.getRegistrations().then((regs) => {
+      regs.forEach((r) => r.unregister());
+    }).catch(() => {});
+  }
+  if (window.caches && caches.keys) {
+    caches.keys().then((keys) => keys.forEach((k) => caches.delete(k))).catch(() => {});
+  }
+
+  // Diagnóstico: se der erro ou demorar demais, mostra o motivo na tela
+  // em vez de ficar girando pra sempre.
+  window.addEventListener("error", (e) => {
+    const el = document.getElementById("esc-loading");
+    if (el) {
+      el.innerHTML = "Erro ao carregar: " + (e.message || "erro desconhecido") +
+        "<br><small>Tente recarregar a página. Se persistir, avise o suporte.</small>";
+      el.style.flexDirection = "column";
+      el.style.textAlign = "center";
+      el.style.padding = "24px";
+    }
+  });
+
+  setTimeout(() => {
+    if (!window.__escOk) {
+      const el = document.getElementById("esc-loading");
+      if (el && el.textContent.indexOf("Carregando") !== -1) {
+        el.innerHTML = "O app está demorando para carregar.<br>" +
+          "Verifique sua conexão com a internet e recarregue a página." +
+          "<br><small>Se o problema continuar, pode ser bloqueio de rede aos scripts do React/Babel.</small>";
+        el.style.flexDirection = "column";
+        el.style.textAlign = "center";
+        el.style.padding = "24px";
+      }
+    }
+  }, 12000);
+</script>
+
+<script type="text/babel" data-presets="react">
+const { useState } = React;
+
+/* ---------- Dados fictícios ---------- */
+
+const MATERIAS_LUCAS = [
+  { nome: "Matemática", professor: "Carlos Souza", bimestres: [7.5, 6.0, 5.0, 4.5], frequencia: 78 },
+  { nome: "Português", professor: "Fernanda Lima", bimestres: [8.0, 7.5, 8.5, 9.0], frequencia: 95 },
+  { nome: "História", professor: "Carlos Souza", bimestres: [5.0, 4.0, 3.5, 4.0], frequencia: 60 },
+  { nome: "Geografia", professor: "Renata Alves", bimestres: [6.5, 7.0, 6.0, 6.5], frequencia: 90 },
+  { nome: "Ciências", professor: "Bruno Tavares", bimestres: [4.0, 3.0, 2.5, null], frequencia: 85 },
+  { nome: "Inglês", professor: "Julia Nakamura", bimestres: [9.0, 9.0, 8.5, 9.0], frequencia: 98 },
+  { nome: "Educação Física", professor: "Marcos Dias", bimestres: [8.0, 8.0, 9.0, 8.0], frequencia: 100 },
+  { nome: "Artes", professor: "Renata Alves", bimestres: [7.0, 7.0, 7.0, 7.0], frequencia: 92 },
+];
+
+const MATERIAS_MARINA = [
+  { nome: "Matemática", professor: "Carlos Souza", bimestres: [6.0, 6.5, 7.0, null], frequencia: 93 },
+  { nome: "Português", professor: "Fernanda Lima", bimestres: [8.0, 8.5, 9.0, null], frequencia: 96 },
+  { nome: "Ciências", professor: "Bruno Tavares", bimestres: [7.5, 8.0, 8.0, null], frequencia: 94 },
+  { nome: "Inglês", professor: "Julia Nakamura", bimestres: [9.0, 8.5, 9.0, null], frequencia: 97 },
+];
+
+const INITIAL_STUDENTS = [
+  { id: 1, nome: "Lucas Ferreira", turma: "9º Ano A", responsavel: "Ana Paula Ferreira", comportamento: 8.5, materias: MATERIAS_LUCAS },
+  { id: 2, nome: "Marina Ferreira", turma: "6º Ano B", responsavel: "Ana Paula Ferreira", comportamento: 9.2, materias: MATERIAS_MARINA },
+];
+
+const INITIAL_AVISOS = [
+  { id: 1, alunoId: 1, professor: "Carlos Souza", materia: "História", tipo: "dificuldade", texto: "Lucas está com dificuldade para acompanhar o conteúdo de Revolução Industrial. Recomendo reforço.", data: "22/07", lido: true },
+  { id: 2, alunoId: 1, professor: "Fernanda Lima", materia: "Comportamento", tipo: "comportamento", texto: "Lucas conversou bastante durante a avaliação de hoje. Pedimos atenção em casa.", data: "18/07", lido: true },
+  { id: 3, alunoId: 2, professor: "Carlos Souza", materia: "Matemática", tipo: "elogio", texto: "Marina teve ótimo desempenho na avaliação de frações. Parabéns!", data: "20/07", lido: true },
+];
+
+const INITIAL_REFORCOS = [
+  { id: 1, alunoId: 1, materia: "História", motivo: "Dificuldade acompanhando o conteúdo de Revolução Industrial.", data: "23/07", status: "aguardando", lido: true },
+];
+
+const INITIAL_REGISTROS = [
+  { id: 1, alunoId: 1, data: "31/07", tipo: "entrada", hora: "07:12" },
+  { id: 2, alunoId: 1, data: "31/07", tipo: "saida", hora: "12:35" },
+  { id: 3, alunoId: 2, data: "31/07", tipo: "entrada", hora: "07:18" },
+];
+
+const TURMAS = ["9º Ano A", "6º Ano B"];
+
+const PROFESSORES = [
+  { nome: "Carlos Souza", materia: "Matemática / História", turmas: "9º Ano A, 6º Ano B" },
+  { nome: "Fernanda Lima", materia: "Português", turmas: "9º Ano A, 6º Ano B" },
+  { nome: "Renata Alves", materia: "Geografia / Artes", turmas: "9º Ano A" },
+  { nome: "Bruno Tavares", materia: "Ciências", turmas: "9º Ano A, 6º Ano B" },
+  { nome: "Julia Nakamura", materia: "Inglês", turmas: "9º Ano A, 6º Ano B" },
+  { nome: "Marcos Dias", materia: "Educação Física", turmas: "9º Ano A" },
+];
+
+const PROFESSOR_POR_MATERIA = {
+  "Matemática": "Carlos Souza",
+  "Português": "Fernanda Lima",
+  "História": "Carlos Souza",
+  "Geografia": "Renata Alves",
+  "Ciências": "Bruno Tavares",
+  "Inglês": "Julia Nakamura",
+  "Educação Física": "Marcos Dias",
+  "Artes": "Renata Alves",
+};
+
+function materiasPadrao() {
+  return Object.entries(PROFESSOR_POR_MATERIA).map(([nome, professor]) => ({
+    nome, professor, bimestres: [null, null, null, null], frequencia: 100,
+  }));
+}
+
+const TIPO_INFO = {
+  dificuldade: { label: "Dificuldade", cor: "amber" },
+  comportamento: { label: "Comportamento", cor: "red" },
+  elogio: { label: "Elogio", cor: "green" },
+  aviso: { label: "Aviso geral", cor: "blue" },
+  diretoria: { label: "Chamado à direção", cor: "red" },
+  evento: { label: "Comunicado da coordenação", cor: "blue" },
+};
+
+const STATUS_LABEL = {
+  aprovado: "Aprovado",
+  recuperacao: "Recuperação",
+  reprovado: "Reprovado",
+  andamento: "Em curso",
+};
+
+/* ---------- Funções auxiliares ---------- */
+
+function media(bimestres) {
+  const vals = bimestres.filter((v) => v !== null && v !== undefined && v !== "");
+  if (vals.length === 0) return null;
+  return vals.reduce((a, b) => a + Number(b), 0) / vals.length;
+}
+
+function statusMateria(materia) {
+  if (materia.bimestres.some((v) => v === null || v === undefined || v === "")) return "andamento";
+  const m = media(materia.bimestres);
+  if (materia.frequencia < 75) return "reprovado";
+  if (m >= 6) return "aprovado";
+  if (m >= 4) return "recuperacao";
+  return "reprovado";
+}
+
+function fmt(n) {
+  return n === null || n === undefined ? "—" : n.toFixed(1);
+}
+
+function ultimoRegistro(registros, alunoId, tipo) {
+  const lista = registros.filter((r) => r.alunoId === alunoId && r.tipo === tipo);
+  if (lista.length === 0) return null;
+  return lista.reduce((a, b) => (b.id > a.id ? b : a));
+}
+
+/* ---------- Componentes pequenos ---------- */
+
+function StampBadge({ status }) {
+  return <span className={`esc-stamp esc-stamp--${status}`}>{STATUS_LABEL[status]}</span>;
+}
+
+function Card({ label, value, sub }) {
+  return (
+    <div className="esc-card">
+      <div className="esc-card-label">{label}</div>
+      <div className="esc-card-value">{value}</div>
+      {sub && <div className="esc-card-sub">{sub}</div>}
+    </div>
+  );
+}
+
+function AvisoItem({ aviso, alunoNome }) {
+  const info = TIPO_INFO[aviso.tipo] || TIPO_INFO.aviso;
+  return (
+    <div className={`esc-aviso esc-aviso--${info.cor}`}>
+      <div className="esc-aviso-top">
+        <span className="esc-aviso-tag">{info.label}</span>
+        <span className="esc-aviso-data">{aviso.data}</span>
+      </div>
+      {alunoNome && <div className="esc-aviso-aluno">{alunoNome} · {aviso.materia}</div>}
+      {!alunoNome && <div className="esc-aviso-aluno">{aviso.materia}</div>}
+      <p className="esc-aviso-texto">{aviso.texto}</p>
+      <div className="esc-aviso-de">— {aviso.professor}</div>
+    </div>
+  );
+}
+
+/* ---------- Tela de login ---------- */
+
+function LoginScreen({ onLogin }) {
+  const [role, setRole] = useState("pai");
+  const [user, setUser] = useState("");
+
+  const roles = [
+    { id: "pai", label: "Responsável" },
+    { id: "professor", label: "Professor(a)" },
+    { id: "admin", label: "Coordenação" },
+  ];
+
+  return (
+    <div className="esc-login-wrap">
+      <div className="esc-login-brand">
+        <div className="esc-login-title">Colégio Trilhas</div>
+        <div className="esc-login-subtitle">Portal Escolar · acompanhamento de alunos</div>
+      </div>
+
+      <div className="esc-tabs">
+        {roles.map((r) => (
+          <button
+            key={r.id}
+            className={`esc-tab ${role === r.id ? "esc-tab--active" : ""}`}
+            onClick={() => setRole(r.id)}
+          >
+            {r.label}
+          </button>
+        ))}
+      </div>
+
+      <div className="esc-login-card">
+        <label className="esc-field">
+          <span>Usuário</span>
+          <input value={user} onChange={(e) => setUser(e.target.value)} placeholder="nome@colegiotrilhas.com.br" />
+        </label>
+        <label className="esc-field">
+          <span>Senha</span>
+          <input type="password" placeholder="••••••••" />
+        </label>
+        <button className="esc-btn esc-btn--primary" onClick={() => onLogin(role)}>
+          Entrar
+        </button>
+        <div className="esc-login-hint">Protótipo — qualquer usuário e senha entram como {roles.find((r) => r.id === role).label.toLowerCase()}.</div>
+      </div>
+
+      <div className="esc-seal">Portal Oficial</div>
+    </div>
+  );
+}
+
+/* ---------- Painel do responsável ---------- */
+
+function PaiDashboard({ students, avisos, reforcos, registros, onConfirmarReforco }) {
+  const [childId, setChildId] = useState(students[0].id);
+
+  const child = students.find((s) => s.id === childId);
+  const freqGeral = Math.round(child.materias.reduce((a, m) => a + m.frequencia, 0) / child.materias.length);
+  const medias = child.materias.map((m) => media(m.bimestres)).filter((v) => v !== null);
+  const mediaGeral = medias.length ? (medias.reduce((a, b) => a + b, 0) / medias.length).toFixed(1) : "—";
+
+  const meusAvisos = avisos.filter((a) => a.alunoId === childId).sort((a, b) => b.id - a.id);
+  const meusReforcos = reforcos.filter((r) => r.alunoId === childId).sort((a, b) => b.id - a.id);
+  const reforcosPendentes = meusReforcos.filter((r) => r.status === "aguardando").length;
+
+  const meusRegistros = registros.filter((r) => r.alunoId === childId).sort((a, b) => b.id - a.id);
+  const entradaHoje = ultimoRegistro(registros, childId, "entrada");
+  const saidaHoje = ultimoRegistro(registros, childId, "saida");
+
+  return (
+    <div className="esc-page">
+      {students.length > 1 && (
+        <div className="esc-tabs esc-tabs--children">
+          {students.map((s) => (
+            <button
+              key={s.id}
+              className={`esc-tab ${childId === s.id ? "esc-tab--active" : ""}`}
+              onClick={() => setChildId(s.id)}
+            >
+              {s.nome.split(" ")[0]} <span className="esc-tab-sub">{s.turma}</span>
+            </button>
+          ))}
+        </div>
+      )}
+
+      <h2 className="esc-h2">{child.nome} <span className="esc-h2-sub">{child.turma}</span></h2>
+
+      <div className="esc-cards-row">
+        <Card label="Entrada hoje" value={entradaHoje ? entradaHoje.hora : "—"} sub={entradaHoje ? entradaHoje.data : "sem registro"} />
+        <Card label="Saída hoje" value={saidaHoje ? saidaHoje.hora : "—"} sub={saidaHoje ? saidaHoje.data : "ainda na escola / sem registro"} />
+        <Card label="Frequência geral" value={`${freqGeral}%`} />
+        <Card label="Média geral" value={mediaGeral} />
+        <Card label="Nota de comportamento" value={fmt(child.comportamento)} />
+        {reforcosPendentes > 0 && <Card label="Reforço aguardando você" value={reforcosPendentes} sub="confirme o recebimento abaixo" />}
+      </div>
+
+      <h3 className="esc-h3">Entrada e saída — histórico</h3>
+      {meusRegistros.length === 0 && <p className="esc-empty">Nenhum registro de entrada ou saída ainda.</p>}
+      <div className="esc-table-wrap">
+        <table className="esc-table">
+          <thead><tr><th>Data</th><th>Tipo</th><th>Horário</th></tr></thead>
+          <tbody>
+            {meusRegistros.slice(0, 6).map((r) => (
+              <tr key={r.id}>
+                <td className="esc-td-mono">{r.data}</td>
+                <td className="esc-td-strong">{r.tipo === "entrada" ? "Entrada" : "Saída"}</td>
+                <td className="esc-td-mono">{r.hora}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      <h3 className="esc-h3">Boletim anual</h3>
+      <div className="esc-table-wrap">
+        <table className="esc-table">
+          <thead>
+            <tr>
+              <th>Matéria</th>
+              <th>Professor(a)</th>
+              <th>1º Bim</th>
+              <th>2º Bim</th>
+              <th>3º Bim</th>
+              <th>4º Bim</th>
+              <th>Média</th>
+              <th>Frequência</th>
+              <th>Situação</th>
+            </tr>
+          </thead>
+          <tbody>
+            {child.materias.map((m) => (
+              <tr key={m.nome}>
+                <td className="esc-td-strong">{m.nome}</td>
+                <td>{m.professor}</td>
+                {m.bimestres.map((b, i) => (
+                  <td key={i} className="esc-td-mono">{fmt(b)}</td>
+                ))}
+                <td className="esc-td-mono esc-td-strong">{fmt(media(m.bimestres))}</td>
+                <td className="esc-td-mono">{m.frequencia}%</td>
+                <td><StampBadge status={statusMateria(m)} /></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      <h3 className="esc-h3">Avisos dos professores</h3>
+      {meusAvisos.length === 0 && <p className="esc-empty">Nenhum aviso por enquanto.</p>}
+      <div className="esc-aviso-list">
+        {meusAvisos.map((a) => (
+          <AvisoItem key={a.id} aviso={a} />
+        ))}
+      </div>
+
+      <h3 className="esc-h3">Solicitações de reforço enviadas pelo professor</h3>
+      {meusReforcos.length === 0 && <p className="esc-empty">Nenhum pedido de reforço até o momento.</p>}
+      <div className="esc-aviso-list">
+        {meusReforcos.map((r) => (
+          <div key={r.id} className="esc-aviso esc-aviso--amber">
+            <div className="esc-aviso-top">
+              <span className="esc-aviso-tag">Reforço · {r.materia}</span>
+              <span className="esc-aviso-data">{r.data}</span>
+            </div>
+            <p className="esc-aviso-texto">{r.motivo}</p>
+            <div className="esc-aviso-top" style={{ marginTop: 8 }}>
+              <span className={`esc-pill esc-pill--${r.status === "confirmado" ? "green" : "amber"}`}>
+                {r.status === "confirmado" ? "Ciência confirmada" : "Aguardando sua confirmação"}
+              </span>
+              {r.status !== "confirmado" && (
+                <button className="esc-btn esc-btn--primary esc-btn--sm" onClick={() => onConfirmarReforco(r.id)}>
+                  Confirmar recebimento
+                </button>
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/* ---------- Painel do professor ---------- */
+
+function ProfessorDashboard({ students, avisos, reforcos, onUpdateNota, onUpdateFrequencia, onAddAviso, onAddReforco }) {
+  const turmas = [...new Set(students.map((s) => s.turma))];
+  const [turma, setTurma] = useState(turmas[0]);
+  const alunosTurma = students.filter((s) => s.turma === turma);
+  const [alunoId, setAlunoId] = useState(alunosTurma[0]?.id);
+  const [tab, setTab] = useState("frequencia");
+
+  const aluno = students.find((s) => s.id === alunoId) || alunosTurma[0];
+
+  function selecionarTurma(t) {
+    setTurma(t);
+    const primeiro = students.find((s) => s.turma === t);
+    setAlunoId(primeiro?.id);
+  }
+
+  return (
+    <div className="esc-page">
+      <div className="esc-tabs">
+        {turmas.map((t) => (
+          <button key={t} className={`esc-tab ${turma === t ? "esc-tab--active" : ""}`} onClick={() => selecionarTurma(t)}>
+            {t}
+          </button>
+        ))}
+      </div>
+
+      <div className="esc-aluno-strip">
+        {alunosTurma.map((s) => (
+          <button key={s.id} className={`esc-aluno-chip ${alunoId === s.id ? "esc-aluno-chip--active" : ""}`} onClick={() => setAlunoId(s.id)}>
+            {s.nome}
+          </button>
+        ))}
+      </div>
+
+      {aluno && (
+        <>
+          <h2 className="esc-h2">{aluno.nome} <span className="esc-h2-sub">{aluno.turma}</span></h2>
+
+          <div className="esc-tabs esc-tabs--sub">
+            {[
+              ["frequencia", "Frequência"],
+              ["notas", "Notas"],
+              ["observacoes", "Comportamento e observações"],
+              ["reforcos", "Solicitar reforço"],
+            ].map(([id, label]) => (
+              <button key={id} className={`esc-tab esc-tab--sm ${tab === id ? "esc-tab--active" : ""}`} onClick={() => setTab(id)}>
+                {label}
+              </button>
+            ))}
+          </div>
+
+          {tab === "frequencia" && <FrequenciaTab aluno={aluno} onUpdateFrequencia={onUpdateFrequencia} />}
+          {tab === "notas" && <NotasTab aluno={aluno} onUpdateNota={onUpdateNota} />}
+          {tab === "observacoes" && (
+            <ObservacoesTab aluno={aluno} avisos={avisos.filter((a) => a.alunoId === aluno.id)} onAddAviso={onAddAviso} />
+          )}
+          {tab === "reforcos" && (
+            <SolicitarReforcoTab
+              aluno={aluno}
+              reforcosTurma={reforcos.filter((r) => alunosTurma.some((s) => s.id === r.alunoId))}
+              students={alunosTurma}
+              onAddReforco={onAddReforco}
+            />
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+function FrequenciaTab({ aluno, onUpdateFrequencia }) {
+  const [materiaSel, setMateriaSel] = useState(aluno.materias[0].nome);
+  const [status, setStatus] = useState("presente");
+  const [msg, setMsg] = useState("");
+
+  function lancar() {
+    onUpdateFrequencia(aluno.id, materiaSel, status === "falta" ? -2 : 1);
+    setMsg(`Registro de hoje (31/07) lançado para ${materiaSel}.`);
+    setTimeout(() => setMsg(""), 3000);
+  }
+
+  return (
+    <div>
+      <div className="esc-table-wrap">
+        <table className="esc-table">
+          <thead><tr><th>Matéria</th><th>Frequência acumulada</th></tr></thead>
+          <tbody>
+            {aluno.materias.map((m) => (
+              <tr key={m.nome}>
+                <td className="esc-td-strong">{m.nome}</td>
+                <td className="esc-td-mono">{m.frequencia}%</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      <div className="esc-form-card" style={{ marginTop: 14 }}>
+        <div className="esc-form-title">Lançar chamada de hoje (31/07)</div>
+        <div className="esc-form-row">
+          <label className="esc-field">
+            <span>Matéria</span>
+            <select value={materiaSel} onChange={(e) => setMateriaSel(e.target.value)}>
+              {aluno.materias.map((m) => <option key={m.nome} value={m.nome}>{m.nome}</option>)}
+            </select>
+          </label>
+          <label className="esc-field">
+            <span>Situação</span>
+            <select value={status} onChange={(e) => setStatus(e.target.value)}>
+              <option value="presente">Presente</option>
+              <option value="falta">Falta</option>
+            </select>
+          </label>
+        </div>
+        <div className="esc-form-actions">
+          <button className="esc-btn esc-btn--primary" onClick={lancar}>Lançar</button>
+        </div>
+        {msg && <div className="esc-toast">{msg}</div>}
+      </div>
+    </div>
+  );
+}
+
+function NotasTab({ aluno, onUpdateNota }) {
+  return (
+    <div className="esc-table-wrap">
+      <table className="esc-table">
+        <thead>
+          <tr>
+            <th>Matéria</th><th>1º Bim</th><th>2º Bim</th><th>3º Bim</th><th>4º Bim</th><th>Média</th><th>Situação</th>
+          </tr>
+        </thead>
+        <tbody>
+          {aluno.materias.map((m) => (
+            <tr key={m.nome}>
+              <td className="esc-td-strong">{m.nome}</td>
+              {m.bimestres.map((b, i) => (
+                <td key={i}>
+                  <input
+                    className="esc-input-inline"
+                    type="number" min="0" max="10" step="0.5"
+                    value={b === null || b === undefined ? "" : b}
+                    onChange={(e) => onUpdateNota(aluno.id, m.nome, i, e.target.value)}
+                  />
+                </td>
+              ))}
+              <td className="esc-td-mono esc-td-strong">{fmt(media(m.bimestres))}</td>
+              <td><StampBadge status={statusMateria(m)} /></td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function ObservacoesTab({ aluno, avisos, onAddAviso }) {
+  const [materia, setMateria] = useState(aluno.materias[0].nome);
+  const [tipo, setTipo] = useState("dificuldade");
+  const [texto, setTexto] = useState("");
+  const [sent, setSent] = useState(false);
+
+  function enviar() {
+    if (!texto.trim()) return;
+    onAddAviso(aluno.id, materia, tipo, texto.trim());
+    setTexto("");
+    setSent(true);
+    setTimeout(() => setSent(false), 3000);
+  }
+
+  return (
+    <div>
+      <div className="esc-form-card">
+        <div className="esc-form-title">Enviar observação ou aviso aos pais</div>
+        <div className="esc-form-row">
+          <label className="esc-field">
+            <span>Matéria</span>
+            <select value={materia} onChange={(e) => setMateria(e.target.value)}>
+              {aluno.materias.map((m) => <option key={m.nome} value={m.nome}>{m.nome}</option>)}
+              <option value="Comportamento">Comportamento</option>
+            </select>
+          </label>
+          <label className="esc-field">
+            <span>Tipo</span>
+            <select value={tipo} onChange={(e) => setTipo(e.target.value)}>
+              <option value="dificuldade">Dificuldade na matéria</option>
+              <option value="comportamento">Comportamento</option>
+              <option value="elogio">Elogio</option>
+              <option value="aviso">Aviso geral</option>
+            </select>
+          </label>
+        </div>
+        <label className="esc-field">
+          <span>Mensagem</span>
+          <textarea value={texto} onChange={(e) => setTexto(e.target.value)} rows={3} placeholder="Escreva o que os pais precisam saber..." />
+        </label>
+        <div className="esc-form-actions">
+          <button className="esc-btn esc-btn--primary" onClick={enviar}>Enviar aos pais</button>
+        </div>
+        {sent && <div className="esc-toast">Aviso enviado — notificação push e e-mail disparados para o responsável.</div>}
+      </div>
+
+      <h3 className="esc-h3">Histórico</h3>
+      {avisos.length === 0 && <p className="esc-empty">Nenhuma observação registrada ainda.</p>}
+      <div className="esc-aviso-list">
+        {avisos.sort((a, b) => b.id - a.id).map((a) => <AvisoItem key={a.id} aviso={a} />)}
+      </div>
+    </div>
+  );
+}
+
+function SolicitarReforcoTab({ aluno, reforcosTurma, students, onAddReforco }) {
+  const [materia, setMateria] = useState(aluno.materias[0].nome);
+  const [motivo, setMotivo] = useState("");
+  const [sent, setSent] = useState(false);
+  const nome = (id) => students.find((s) => s.id === id)?.nome || "—";
+
+  function enviar() {
+    if (!motivo.trim()) return;
+    onAddReforco(aluno.id, materia, motivo.trim());
+    setMotivo("");
+    setSent(true);
+    setTimeout(() => setSent(false), 3000);
+  }
+
+  return (
+    <div>
+      <div className="esc-form-card">
+        <div className="esc-form-title">Solicitar reforço aos pais de {aluno.nome.split(" ")[0]}</div>
+        <label className="esc-field">
+          <span>Matéria</span>
+          <select value={materia} onChange={(e) => setMateria(e.target.value)}>
+            {aluno.materias.map((m) => <option key={m.nome} value={m.nome}>{m.nome}</option>)}
+          </select>
+        </label>
+        <label className="esc-field">
+          <span>Dificuldade observada / o que os pais devem reforçar em casa</span>
+          <textarea value={motivo} onChange={(e) => setMotivo(e.target.value)} rows={3} placeholder="Ex: Lucas está com dificuldade em Revolução Industrial, seria importante revisar em casa e considerar aulas de reforço." />
+        </label>
+        <div className="esc-form-actions">
+          <button className="esc-btn esc-btn--primary" onClick={enviar}>Enviar solicitação aos pais</button>
+        </div>
+        {sent && <div className="esc-toast">Solicitação enviada — notificação push e e-mail disparados para o responsável.</div>}
+      </div>
+
+      <h3 className="esc-h3">Solicitações da turma</h3>
+      <div className="esc-table-wrap">
+        <table className="esc-table">
+          <thead><tr><th>Aluno</th><th>Matéria</th><th>Motivo</th><th>Data</th><th>Status</th></tr></thead>
+          <tbody>
+            {reforcosTurma.length === 0 && (
+              <tr><td colSpan={5} className="esc-empty">Nenhuma solicitação de reforço para esta turma.</td></tr>
+            )}
+            {reforcosTurma.map((r) => (
+              <tr key={r.id}>
+                <td className="esc-td-strong">{nome(r.alunoId)}</td>
+                <td>{r.materia}</td>
+                <td>{r.motivo}</td>
+                <td className="esc-td-mono">{r.data}</td>
+                <td><span className={`esc-pill esc-pill--${r.status === "confirmado" ? "green" : "amber"}`}>{r.status === "confirmado" ? "Ciência confirmada" : "Aguardando pais"}</span></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+/* ---------- Painel da coordenação ---------- */
+
+function AdminDashboard({ students, reforcos, avisos, registros, onAddComunicado, onAddAluno, onAddRegistro }) {
+  const totalAlunos = students.length;
+  const totalTurmas = new Set(students.map((s) => s.turma)).size;
+
+  const todasMaterias = students.flatMap((s) => s.materias.map((m) => ({ ...m, alunoId: s.id })));
+  const concluidas = todasMaterias.filter((m) => statusMateria(m) !== "andamento");
+  const aprovadas = concluidas.filter((m) => statusMateria(m) === "aprovado");
+  const pctAprovacao = concluidas.length ? Math.round((aprovadas.length / concluidas.length) * 100) : 0;
+
+  const alunosRisco = students
+    .map((s) => ({ ...s, riscos: s.materias.filter((m) => ["recuperacao", "reprovado"].includes(statusMateria(m))) }))
+    .filter((s) => s.riscos.length > 0);
+
+  const nome = (id) => students.find((s) => s.id === id)?.nome || "—";
+
+  return (
+    <div className="esc-page">
+      <h2 className="esc-h2">Visão geral da rede</h2>
+      <div className="esc-cards-row">
+        <Card label="Alunos monitorados" value={totalAlunos} />
+        <Card label="Turmas ativas" value={totalTurmas} />
+        <Card label="Aprovação geral" value={`${pctAprovacao}%`} sub="matérias já concluídas" />
+        <Card label="Alunos em risco" value={alunosRisco.length} sub="recuperação ou reprovação" />
+      </div>
+
+      <AdicionarAlunoSection students={students} onAddAluno={onAddAluno} />
+
+      <EntradaSaidaSection students={students} registros={registros} onAddRegistro={onAddRegistro} />
+
+      <h3 className="esc-h3">Alunos em risco</h3>
+      {alunosRisco.length === 0 && <p className="esc-empty">Nenhum aluno em situação de risco no momento.</p>}
+      <div className="esc-table-wrap">
+        {alunosRisco.length > 0 && (
+          <table className="esc-table">
+            <thead><tr><th>Aluno</th><th>Turma</th><th>Matérias em risco</th></tr></thead>
+            <tbody>
+              {alunosRisco.map((s) => (
+                <tr key={s.id}>
+                  <td className="esc-td-strong">{s.nome}</td>
+                  <td>{s.turma}</td>
+                  <td className="esc-risco-list">
+                    {s.riscos.map((m) => (
+                      <span key={m.nome} className="esc-risco-item">
+                        {m.nome} <StampBadge status={statusMateria(m)} />
+                      </span>
+                    ))}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+
+      <h3 className="esc-h3">Solicitações de reforço (professor → pais)</h3>
+      <div className="esc-table-wrap">
+        <table className="esc-table">
+          <thead><tr><th>Aluno</th><th>Matéria</th><th>Motivo</th><th>Data</th><th>Status</th></tr></thead>
+          <tbody>
+            {reforcos.length === 0 && (
+              <tr><td colSpan={5} className="esc-empty">Nenhuma solicitação registrada.</td></tr>
+            )}
+            {reforcos.map((r) => (
+              <tr key={r.id}>
+                <td className="esc-td-strong">{nome(r.alunoId)}</td>
+                <td>{r.materia}</td>
+                <td>{r.motivo}</td>
+                <td className="esc-td-mono">{r.data}</td>
+                <td><span className={`esc-pill esc-pill--${r.status === "confirmado" ? "green" : "amber"}`}>{r.status === "confirmado" ? "Ciência confirmada" : "Aguardando pais"}</span></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      <ComunicadosSection students={students} avisos={avisos} onAddComunicado={onAddComunicado} />
+
+      <h3 className="esc-h3">Equipe docente</h3>
+      <div className="esc-cards-row esc-cards-row--wrap">
+        {PROFESSORES.map((p) => (
+          <div key={p.nome} className="esc-prof-card">
+            <div className="esc-prof-nome">{p.nome}</div>
+            <div className="esc-prof-materia">{p.materia}</div>
+            <div className="esc-prof-turmas">{p.turmas}</div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function ComunicadosSection({ students, avisos, onAddComunicado }) {
+  const [alunoId, setAlunoId] = useState(students[0].id);
+  const [tipo, setTipo] = useState("diretoria");
+  const [texto, setTexto] = useState("");
+  const [sent, setSent] = useState(false);
+
+  const comunicados = avisos
+    .filter((a) => a.professor === "Coordenação Pedagógica")
+    .sort((a, b) => b.id - a.id);
+
+  function enviar() {
+    if (!texto.trim()) return;
+    onAddComunicado(alunoId, tipo, texto.trim());
+    setTexto("");
+    setSent(true);
+    setTimeout(() => setSent(false), 3000);
+  }
+
+  const nome = (id) => students.find((s) => s.id === id)?.nome || "—";
+
+  return (
+    <>
+      <h3 className="esc-h3">Comunicar responsáveis</h3>
+      <div className="esc-form-card">
+        <div className="esc-form-title">Avisar pais sobre ida à direção ou outra eventualidade</div>
+        <div className="esc-form-row">
+          <label className="esc-field">
+            <span>Aluno</span>
+            <select value={alunoId} onChange={(e) => setAlunoId(Number(e.target.value))}>
+              {students.map((s) => <option key={s.id} value={s.id}>{s.nome} — {s.turma}</option>)}
+            </select>
+          </label>
+          <label className="esc-field">
+            <span>Tipo</span>
+            <select value={tipo} onChange={(e) => setTipo(e.target.value)}>
+              <option value="diretoria">Chamado à direção</option>
+              <option value="evento">Comunicado geral</option>
+            </select>
+          </label>
+        </div>
+        <label className="esc-field">
+          <span>Mensagem</span>
+          <textarea value={texto} onChange={(e) => setTexto(e.target.value)} rows={3} placeholder="Ex: O aluno foi encaminhado à direção hoje por indisciplina em sala. Pedimos que compareçam para conversar." />
+        </label>
+        <div className="esc-form-actions">
+          <button className="esc-btn esc-btn--primary" onClick={enviar}>Enviar comunicado</button>
+        </div>
+        {sent && <div className="esc-toast">Comunicado enviado — notificação push e e-mail disparados para o responsável.</div>}
+      </div>
+
+      {comunicados.length > 0 && (
+        <div className="esc-aviso-list" style={{ marginTop: 12 }}>
+          {comunicados.map((a) => <AvisoItem key={a.id} aviso={a} alunoNome={nome(a.alunoId)} />)}
+        </div>
+      )}
+    </>
+  );
+}
+
+function AdicionarAlunoSection({ students, onAddAluno }) {
+  const [nome, setNome] = useState("");
+  const [turma, setTurma] = useState("");
+  const [responsavel, setResponsavel] = useState("");
+  const [sent, setSent] = useState(false);
+  const turmasExistentes = [...new Set(students.map((s) => s.turma))];
+
+  function enviar() {
+    if (!nome.trim() || !turma.trim() || !responsavel.trim()) return;
+    onAddAluno(nome.trim(), turma.trim(), responsavel.trim());
+    setNome("");
+    setTurma("");
+    setResponsavel("");
+    setSent(true);
+    setTimeout(() => setSent(false), 3000);
+  }
+
+  return (
+    <>
+      <h3 className="esc-h3">Adicionar aluno</h3>
+      <div className="esc-form-card">
+        <div className="esc-form-title">Cadastro rápido — só o essencial pra já começar o acompanhamento</div>
+        <div className="esc-form-row">
+          <label className="esc-field">
+            <span>Nome do aluno</span>
+            <input value={nome} onChange={(e) => setNome(e.target.value)} placeholder="Nome completo" />
+          </label>
+          <label className="esc-field">
+            <span>Turma</span>
+            <input value={turma} onChange={(e) => setTurma(e.target.value)} list="esc-turmas-list" placeholder="Ex: 9º Ano A" />
+            <datalist id="esc-turmas-list">
+              {turmasExistentes.map((t) => <option key={t} value={t} />)}
+            </datalist>
+          </label>
+          <label className="esc-field">
+            <span>Responsável</span>
+            <input value={responsavel} onChange={(e) => setResponsavel(e.target.value)} placeholder="Nome do pai, mãe ou responsável" />
+          </label>
+        </div>
+        <div className="esc-form-actions">
+          <button className="esc-btn esc-btn--primary" onClick={enviar}>Cadastrar aluno</button>
+        </div>
+        {sent && <div className="esc-toast">Aluno cadastrado! Já aparece na turma, pronto para receber notas e frequência.</div>}
+      </div>
+
+      <div className="esc-table-wrap" style={{ marginTop: 12 }}>
+        <table className="esc-table">
+          <thead><tr><th>Aluno</th><th>Turma</th><th>Responsável</th></tr></thead>
+          <tbody>
+            {students.map((s) => (
+              <tr key={s.id}>
+                <td className="esc-td-strong">{s.nome}</td>
+                <td>{s.turma}</td>
+                <td>{s.responsavel}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </>
+  );
+}
+
+function EntradaSaidaSection({ students, registros, onAddRegistro }) {
+  const [alunoId, setAlunoId] = useState(students[0].id);
+  const [tipo, setTipo] = useState("entrada");
+  const [sent, setSent] = useState(false);
+  const nome = (id) => students.find((s) => s.id === id)?.nome || "—";
+
+  function agora() {
+    const d = new Date();
+    return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+  }
+
+  function registrar() {
+    onAddRegistro(alunoId, tipo, agora());
+    setSent(true);
+    setTimeout(() => setSent(false), 3000);
+  }
+
+  const recentes = [...registros].sort((a, b) => b.id - a.id).slice(0, 8);
+
+  return (
+    <>
+      <h3 className="esc-h3">Entrada e saída — portaria</h3>
+      <div className="esc-form-card">
+        <div className="esc-form-title">Registrar passagem na portaria</div>
+        <div className="esc-form-row">
+          <label className="esc-field">
+            <span>Aluno</span>
+            <select value={alunoId} onChange={(e) => setAlunoId(Number(e.target.value))}>
+              {students.map((s) => <option key={s.id} value={s.id}>{s.nome} — {s.turma}</option>)}
+            </select>
+          </label>
+          <label className="esc-field">
+            <span>Tipo</span>
+            <select value={tipo} onChange={(e) => setTipo(e.target.value)}>
+              <option value="entrada">Entrada</option>
+              <option value="saida">Saída</option>
+            </select>
+          </label>
+        </div>
+        <div className="esc-form-actions">
+          <button className="esc-btn esc-btn--primary" onClick={registrar}>Registrar agora</button>
+        </div>
+        {sent && <div className="esc-toast">Registrado! Notificação enviada por push e e-mail ao responsável.</div>}
+      </div>
+
+      <div className="esc-table-wrap" style={{ marginTop: 12 }}>
+        <table className="esc-table">
+          <thead><tr><th>Aluno</th><th>Data</th><th>Tipo</th><th>Horário</th></tr></thead>
+          <tbody>
+            {recentes.length === 0 && <tr><td colSpan={4} className="esc-empty">Nenhum registro ainda.</td></tr>}
+            {recentes.map((r) => (
+              <tr key={r.id}>
+                <td className="esc-td-strong">{nome(r.alunoId)}</td>
+                <td className="esc-td-mono">{r.data}</td>
+                <td>{r.tipo === "entrada" ? "Entrada" : "Saída"}</td>
+                <td className="esc-td-mono">{r.hora}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </>
+  );
+}
+
+/* ---------- App principal ---------- */
+
+function PortalEscolar() {
+  const [loggedIn, setLoggedIn] = useState(false);
+  const [role, setRole] = useState(null);
+  const [students, setStudents] = useState(INITIAL_STUDENTS);
+  const [avisos, setAvisos] = useState(INITIAL_AVISOS);
+  const [reforcos, setReforcos] = useState(INITIAL_REFORCOS);
+  const [registros, setRegistros] = useState(INITIAL_REGISTROS);
+
+  function onUpdateNota(alunoId, materiaNome, idx, valorStr) {
+    const valor = valorStr === "" ? null : Math.max(0, Math.min(10, Number(valorStr)));
+    setStudents((prev) =>
+      prev.map((s) =>
+        s.id !== alunoId ? s : {
+          ...s,
+          materias: s.materias.map((m) =>
+            m.nome !== materiaNome ? m : { ...m, bimestres: m.bimestres.map((b, i) => (i === idx ? valor : b)) }
+          ),
+        }
+      )
+    );
+  }
+
+  function onUpdateFrequencia(alunoId, materiaNome, delta) {
+    setStudents((prev) =>
+      prev.map((s) =>
+        s.id !== alunoId ? s : {
+          ...s,
+          materias: s.materias.map((m) =>
+            m.nome !== materiaNome ? m : { ...m, frequencia: Math.max(0, Math.min(100, m.frequencia + delta)) }
+          ),
+        }
+      )
+    );
+  }
+
+  function onAddAviso(alunoId, materia, tipo, texto) {
+    setAvisos((prev) => [{ id: Date.now(), alunoId, professor: "Carlos Souza", materia, tipo, texto, data: "31/07", lido: false }, ...prev]);
+  }
+
+  function onAddReforco(alunoId, materia, motivo) {
+    setReforcos((prev) => [{ id: Date.now(), alunoId, materia, motivo, data: "31/07", status: "aguardando", lido: false }, ...prev]);
+  }
+
+  function onConfirmarReforco(id) {
+    setReforcos((prev) => prev.map((r) => (r.id === id ? { ...r, status: "confirmado" } : r)));
+  }
+
+  function onAddComunicado(alunoId, tipo, texto) {
+    setAvisos((prev) => [{ id: Date.now(), alunoId, professor: "Coordenação Pedagógica", materia: tipo === "diretoria" ? "Direção" : "Coordenação", tipo, texto, data: "31/07", lido: false }, ...prev]);
+  }
+
+  function onAddAluno(nome, turma, responsavel) {
+    setStudents((prev) => [...prev, { id: Date.now(), nome, turma, responsavel, comportamento: null, materias: materiasPadrao() }]);
+  }
+
+  function onAddRegistro(alunoId, tipo, hora) {
+    setRegistros((prev) => [{ id: Date.now(), alunoId, data: "31/07", tipo, hora }, ...prev]);
+  }
+
+  function onMarcarTudoLido(alunoIds) {
+    setAvisos((prev) => prev.map((a) => (alunoIds.includes(a.alunoId) ? { ...a, lido: true } : a)));
+    setReforcos((prev) => prev.map((r) => (alunoIds.includes(r.alunoId) ? { ...r, lido: true } : r)));
+  }
+
+  const roleLabel = { pai: "Responsável", professor: "Professor(a)", admin: "Coordenação" };
+  const roleUser = { pai: "Ana Paula Ferreira", professor: "Carlos Souza", admin: "Coordenação Pedagógica" };
+
+  const meusFilhosIds = students.filter((s) => s.responsavel === "Ana Paula Ferreira").map((s) => s.id);
+  const naoLidos =
+    avisos.filter((a) => meusFilhosIds.includes(a.alunoId) && !a.lido).length +
+    reforcos.filter((r) => meusFilhosIds.includes(r.alunoId) && !r.lido).length;
+
+  return (
+    <div className="escola-app">
+      <style>{CSS}</style>
+
+      {!loggedIn ? (
+        <LoginScreen onLogin={(r) => { setRole(r); setLoggedIn(true); }} />
+      ) : (
+        <>
+          <div className="esc-spiral" />
+          <header className="esc-header">
+            <div>
+              <div className="esc-header-title">Colégio Trilhas</div>
+              <div className="esc-header-sub">Portal Escolar</div>
+            </div>
+            <div className="esc-header-right">
+              {role === "pai" && naoLidos > 0 && (
+                <button className="esc-bell" onClick={() => onMarcarTudoLido(meusFilhosIds)} title="Marcar notificações como lidas">
+                  🔔 {naoLidos} nova{naoLidos > 1 ? "s" : ""}
+                </button>
+              )}
+              <span className="esc-postit">{roleLabel[role]}</span>
+              <span className="esc-header-user">{roleUser[role]}</span>
+              <button className="esc-btn esc-btn--ghost esc-btn--sm" onClick={() => setLoggedIn(false)}>Sair</button>
+            </div>
+          </header>
+
+          {role === "pai" && (
+            <PaiDashboard
+              students={students.filter((s) => s.responsavel === "Ana Paula Ferreira")}
+              avisos={avisos}
+              reforcos={reforcos}
+              registros={registros}
+              onConfirmarReforco={onConfirmarReforco}
+            />
+          )}
+          {role === "professor" && (
+            <ProfessorDashboard
+              students={students}
+              avisos={avisos}
+              reforcos={reforcos}
+              onUpdateNota={onUpdateNota}
+              onUpdateFrequencia={onUpdateFrequencia}
+              onAddAviso={onAddAviso}
+              onAddReforco={onAddReforco}
+            />
+          )}
+          {role === "admin" && (
+            <AdminDashboard
+              students={students}
+              reforcos={reforcos}
+              avisos={avisos}
+              registros={registros}
+              onAddComunicado={onAddComunicado}
+              onAddAluno={onAddAluno}
+              onAddRegistro={onAddRegistro}
+            />
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+/* ---------- CSS ---------- */
+
+const CSS = `
+@import url('https://fonts.googleapis.com/css2?family=Kalam:wght@400;700&family=Inter:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap');
+
+.escola-app {
+  --paper: #faf9f4;
+  --rule: #c3d6e6;
+  --margin: #c6504f;
+  --ink: #263548;
+  --board: #1f3d2e;
+  --green: #2e7d4f;
+  --amber: #c07a1e;
+  --red: #c0392b;
+  --blue: #3f6fa8;
+  --grey: #8592a3;
+  --font-display: 'Kalam', 'Segoe Print', cursive;
+  --font-body: 'Inter', system-ui, sans-serif;
+  --font-mono: 'Space Mono', 'Courier New', monospace;
+
+  position: relative;
+  min-height: 100%;
+  background: var(--paper);
+  background-image: repeating-linear-gradient(to bottom, transparent, transparent 31px, var(--rule) 32px);
+  font-family: var(--font-body);
+  color: var(--ink);
+  padding: 0 0 40px 0;
+}
+
+.escola-app::before {
+  content: '';
+  position: absolute;
+  top: 0; bottom: 0; left: 46px;
+  width: 2px;
+  background: var(--margin);
+  opacity: .55;
+  z-index: 0;
+}
+
+.esc-spiral {
+  height: 18px;
+  background-image: radial-gradient(circle, #cfd6da 2.6px, transparent 3px);
+  background-size: 22px 18px;
+  background-position: center;
+}
+
+.esc-header, .esc-page, .esc-login-wrap { position: relative; z-index: 1; padding-left: 62px; padding-right: 24px; }
+
+.esc-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding-top: 14px; padding-bottom: 10px; flex-wrap: wrap; gap: 10px;
+}
+.esc-header-title { font-family: var(--font-display); font-size: 26px; font-weight: 700; transform: rotate(-1deg); color: var(--board); }
+.esc-header-sub { font-size: 12px; color: var(--grey); letter-spacing: .04em; text-transform: uppercase; }
+.esc-header-right { display: flex; align-items: center; gap: 10px; }
+.esc-header-user { font-size: 13px; color: var(--ink); font-weight: 500; }
+
+.esc-postit {
+  background: #f5d97a; padding: 3px 10px; font-size: 12px; font-weight: 600;
+  transform: rotate(-2deg); box-shadow: 1px 2px 3px rgba(0,0,0,.12); border-radius: 2px;
+}
+
+.esc-bell {
+  font-family: var(--font-body); font-weight: 700; font-size: 12px;
+  background: #fde3e2; color: var(--red); border: 1px solid var(--red);
+  border-radius: 20px; padding: 5px 12px; cursor: pointer;
+}
+.esc-bell:hover { background: #fbd0ce; }
+
+.esc-page { padding-top: 8px; padding-bottom: 30px; max-width: 1000px; }
+
+.esc-h2 { font-family: var(--font-display); font-size: 24px; margin: 6px 0 14px; color: var(--board); }
+.esc-h2-sub { font-family: var(--font-body); font-size: 13px; color: var(--grey); font-weight: 500; margin-left: 8px; }
+.esc-h3 { font-family: var(--font-display); font-size: 18px; margin: 26px 0 10px; color: var(--board); }
+
+.esc-cards-row { display: flex; gap: 12px; flex-wrap: wrap; }
+.esc-cards-row--wrap { flex-wrap: wrap; }
+
+.esc-card {
+  background: #fff; border: 1px solid #e3e1d6; border-radius: 6px;
+  padding: 12px 16px; min-width: 150px; flex: 1;
+  box-shadow: 1px 2px 0 rgba(0,0,0,.03);
+}
+.esc-card-label { font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--grey); margin-bottom: 4px; }
+.esc-card-value { font-family: var(--font-mono); font-size: 24px; font-weight: 700; color: var(--ink); }
+.esc-card-sub { font-size: 11px; color: var(--grey); margin-top: 2px; }
+
+.esc-table-wrap { overflow-x: auto; background: #fff; border: 1px solid #e3e1d6; border-radius: 6px; }
+.esc-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.esc-table th {
+  text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: .04em;
+  color: var(--grey); padding: 10px 12px; border-bottom: 2px solid var(--margin);
+}
+.esc-table td { padding: 9px 12px; border-bottom: 1px solid #eee; vertical-align: middle; }
+.esc-td-strong { font-weight: 600; }
+.esc-td-mono { font-family: var(--font-mono); }
+.esc-empty { padding: 14px; color: var(--grey); font-size: 13px; }
+
+.esc-stamp {
+  display: inline-block; border: 2.5px solid currentColor; border-radius: 6px;
+  padding: 2px 8px; font-family: var(--font-display); font-weight: 700;
+  text-transform: uppercase; font-size: 11px; letter-spacing: .03em; transform: rotate(-4deg);
+}
+.esc-stamp--aprovado { color: var(--green); }
+.esc-stamp--recuperacao { color: var(--amber); }
+.esc-stamp--reprovado { color: var(--red); }
+.esc-stamp--andamento { color: var(--grey); border-style: dashed; transform: rotate(-1deg); }
+
+.esc-pill { display: inline-block; padding: 3px 10px; border-radius: 20px; font-size: 12px; font-weight: 600; }
+.esc-pill--amber { background: #fbe7cc; color: var(--amber); }
+.esc-pill--green { background: #d9ecdf; color: var(--green); }
+
+.esc-tabs { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 14px; }
+.esc-tabs--sub { margin-top: 14px; }
+.esc-tab {
+  font-family: var(--font-body); font-weight: 600; font-size: 13px;
+  background: #eef0e9; border: 1px solid #d8dccf; border-bottom: none;
+  border-radius: 8px 8px 0 0; padding: 8px 16px; cursor: pointer; color: var(--ink);
+  transform: translateY(3px);
+}
+.esc-tab--sm { padding: 6px 12px; font-size: 12px; }
+.esc-tab--active { background: #fff; border-color: var(--board); color: var(--board); transform: translateY(0); box-shadow: 0 -1px 0 var(--board) inset; }
+.esc-tab-sub { font-weight: 400; font-size: 11px; color: var(--grey); margin-left: 4px; }
+
+.esc-aluno-strip { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
+.esc-aluno-chip {
+  border: 1px solid #d8dccf; background: #fff; border-radius: 20px; padding: 6px 14px;
+  font-size: 13px; cursor: pointer; color: var(--ink);
+}
+.esc-aluno-chip--active { background: var(--board); color: #fff; border-color: var(--board); }
+
+.esc-aviso-list { display: flex; flex-direction: column; gap: 10px; }
+.esc-aviso { background: #fff; border: 1px solid #e3e1d6; border-left: 4px solid var(--grey); border-radius: 4px; padding: 10px 14px; }
+.esc-aviso--amber { border-left-color: var(--amber); }
+.esc-aviso--red { border-left-color: var(--red); }
+.esc-aviso--green { border-left-color: var(--green); }
+.esc-aviso--blue { border-left-color: var(--blue); }
+.esc-aviso-top { display: flex; justify-content: space-between; margin-bottom: 4px; }
+.esc-aviso-tag { font-size: 11px; text-transform: uppercase; letter-spacing: .04em; font-weight: 700; color: var(--grey); }
+.esc-aviso-data { font-family: var(--font-mono); font-size: 11px; color: var(--grey); }
+.esc-aviso-aluno { font-size: 12px; font-weight: 600; color: var(--ink); margin-bottom: 2px; }
+.esc-aviso-texto { font-size: 13px; margin: 4px 0; line-height: 1.5; }
+.esc-aviso-de { font-family: var(--font-display); font-size: 13px; color: var(--grey); }
+
+.esc-form-card { background: #fff; border: 1px solid #e3e1d6; border-radius: 6px; padding: 16px; max-width: 560px; }
+.esc-form-title { font-weight: 600; font-size: 14px; margin-bottom: 10px; }
+.esc-form-row { display: flex; gap: 12px; flex-wrap: wrap; }
+.esc-form-actions { display: flex; gap: 8px; margin-top: 6px; }
+
+.esc-field { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--grey); margin-bottom: 10px; flex: 1; min-width: 160px; }
+.esc-field input, .esc-field select, .esc-field textarea {
+  font-family: var(--font-body); font-size: 14px; color: var(--ink);
+  border: 1px solid #cfd3c9; border-radius: 5px; padding: 8px 10px; background: #fdfdfa;
+}
+.esc-field input:focus, .esc-field select:focus, .esc-field textarea:focus { outline: 2px solid var(--board); outline-offset: 1px; }
+
+.esc-input-inline { width: 52px; font-family: var(--font-mono); border: 1px solid #cfd3c9; border-radius: 4px; padding: 4px 6px; }
+.esc-input-inline:focus { outline: 2px solid var(--board); }
+
+.esc-btn { font-family: var(--font-body); font-weight: 600; font-size: 13px; border-radius: 6px; padding: 9px 18px; cursor: pointer; border: none; }
+.esc-btn--sm { padding: 6px 12px; font-size: 12px; }
+.esc-btn--primary { background: var(--board); color: #fff; }
+.esc-btn--primary:hover { background: #16301f; }
+.esc-btn--ghost { background: transparent; color: var(--ink); border: 1px solid #cfd3c9; }
+.esc-btn--ghost:hover { background: #f1f0e9; }
+
+.esc-toast { margin-top: 10px; background: #d9ecdf; color: var(--green); font-size: 13px; font-weight: 600; padding: 8px 12px; border-radius: 5px; }
+
+.esc-risco-list { display: flex; gap: 8px; flex-wrap: wrap; }
+.esc-risco-item { font-size: 12px; display: inline-flex; align-items: center; gap: 6px; }
+
+.esc-prof-card { background: #fff; border: 1px solid #e3e1d6; border-radius: 6px; padding: 12px 14px; min-width: 180px; flex: 1; }
+.esc-prof-nome { font-weight: 700; font-size: 14px; }
+.esc-prof-materia { font-size: 12px; color: var(--ink); margin-top: 2px; }
+.esc-prof-turmas { font-size: 11px; color: var(--grey); margin-top: 2px; }
+
+.esc-login-wrap {
+  max-width: 420px; margin: 0 auto; padding-top: 60px; display: flex; flex-direction: column; align-items: center;
+}
+.esc-login-brand { text-align: center; margin-bottom: 28px; }
+.esc-login-title { font-family: var(--font-display); font-size: 34px; font-weight: 700; color: var(--board); transform: rotate(-1deg); }
+.esc-login-subtitle { font-size: 12px; color: var(--grey); text-transform: uppercase; letter-spacing: .05em; margin-top: 4px; }
+
+.esc-login-card { background: #fff; border: 1px solid #e3e1d6; border-radius: 6px; padding: 22px; width: 100%; box-shadow: 2px 3px 0 rgba(0,0,0,.04); }
+.esc-login-card .esc-field { width: 100%; }
+.esc-login-card .esc-btn { width: 100%; margin-top: 6px; }
+.esc-login-hint { font-size: 11px; color: var(--grey); margin-top: 12px; text-align: center; line-height: 1.5; }
+
+.esc-tabs--children { justify-content: center; }
+
+.esc-seal {
+  margin-top: 26px; font-family: var(--font-display); font-size: 13px; color: var(--red);
+  border: 2px dashed var(--red); border-radius: 50%; width: 92px; height: 92px;
+  display: flex; align-items: center; justify-content: center; text-align: center;
+  transform: rotate(-8deg); opacity: .75; line-height: 1.2;
+}
+
+@media (max-width: 640px) {
+  .escola-app::before { left: 20px; }
+  .esc-header, .esc-page, .esc-login-wrap { padding-left: 28px; padding-right: 14px; }
+  .esc-form-row { flex-direction: column; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * { transition: none !important; }
+}
+`;
+
+
+const root = ReactDOM.createRoot(document.getElementById("root"));
+root.render(<PortalEscolar />);
+window.__escOk = true;
+</script>
+</body>
+</html>

@@ -1,0 +1,25 @@
+{
+  "name": "Portal Escolar - Colégio Trilhas",
+  "short_name": "Portal Escolar",
+  "description": "Acompanhamento de alunos para pais, professores e coordenação.",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#faf9f4",
+  "theme_color": "#1f3d2e",
+  "icons": [
+    {
+      "src": "icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
